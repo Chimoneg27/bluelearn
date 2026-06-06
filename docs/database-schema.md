@@ -65,10 +65,16 @@ Methods, alternatives, and the original write-up all live here as **guides** und
 - `guide_base_id`: the parent guide base this guide lives under (FK to `guide_bases`).
 - `slug`: stable, per-guide URL identifier, unique within `guide_base_id` (see [Slugs and URLs](#slugs-and-urls)). Derived from the title and frozen at first publish; never auto-changed by later title edits.
 - `current_revision_id`: nullable FK to `guide_revisions`; points at the revision whose review case was approved (the guide's live content), null before the guide is first published. Creates a guide ↔ revision pointer cycle, so the FK should be deferrable.
-- `status`: node-level disposition (`draft | published | archived`); same shape as `guide_bases.status`.
+- `status`: node-level disposition; same shape as `guide_bases.status` (see enum below).
 - `author_id`: the guide's original author.
 - `created_at`: row creation time.
 - `updated_at`: last update time.
+
+Status enum values are:
+
+- `draft` — nothing published yet.
+- `published` — live content exists.
+- `archived` — deliberately retired.
 
 A guide stores no `title` or `summary` of its own: both are **versioned content** living on `guide_revisions`, so a rename is captured in history and restored on rollback like any other edit. A guide's live title/summary is its current revision's; lists, frontiers, and walkthrough previews read them by joining through `current_revision_id` (most often the canonical guide's). Ordering among sibling guides under the same guide base is **derived** from votes, not stored here.
 
@@ -311,6 +317,49 @@ Contests the outcome of a prior `review_case`.
 ## Considerations
 
 Design decisions and rules that span multiple tables.
+
+### Guide Statuses
+
+`guide_bases`, `guides`, and `guide_revisions` each have a status enum, and none of them stores a review outcome (`in_review`, `accepted`, `rejected`) deliberately to eilminate redundancy and potential drift. **Review outcome is owned by** `review_cases.status` **and derived everywhere else**, so it lives in exactly one place and cannot drift.
+
+Submitting a revision creates a `guide_review_cases` row pointing at a `review_cases` row in the same transaction that flips the revision to `submitted`. From then on, the review lifecycle (`pending → in_review → approved | rejected`) is tracked entirely by `review_cases.status`. The revision and the node it belongs to read that state by joining through the case; they never copy it.
+
+**Why `guide_revisions.status` is only `draft | submitted`.** A revision only needs to record the part of its lifecycle that *it* owns:
+
+- `draft` — being written, mutable, no case yet.
+- `submitted` — handed off to review; exactly one `guide_review_cases` row now exists.
+
+Adding `in_review`, `accepted`, or `rejected` here would duplicate `review_cases.status`. Two columns describing the same fact means they can possibly disagree/drift (e.g. the case is `approved` but the revision still says `in_review` because an update was missed). So, a revision "reads as accepted" when its case is `approved`, and it is never stamped on the revision row itself. `published` and `archived` are excluded for a different reason: they describe a *node's* disposition, not a single revision's, so they belong to `guides`/`guide_bases`, not here.
+
+**Why** `guides.status` **and** `guide_bases.status` **are only** `draft | published | archived`**.** These are the lasting states of a graph node, which do not include the transient state of a review in process:
+
+- `draft` — nothing published yet.
+- `published` — live content exists.
+- `archived` — deliberately retired.
+
+`in_review` and `rejected` are review-case states, not node states, so they would be category errors here. A guide does not "become rejected"; one of its *revisions'* review cases is rejected, after which the guide simply stays `draft`, and the rejected snapshot is kept in history with its outcome derivable from the case. Likewise, a guide is never `in_review` as a node; only a specific submitted revision is, via its case. Keeping these statuses off the node means a node's `status` answers exactly one question ("is this thing live?") and is never coupled to whatever review may or may not be running against one of its revisions.
+
+**Summary of ownership:**
+
+
+| Question                                            | Source of truth                                  | Read elsewhere by                     |
+| --------------------------------------------------- | ------------------------------------------------ | ------------------------------------- |
+| Is a revision still being written or handed off?    | `guide_revisions.status` (`draft                 | submitted`)                           |
+| What is the review verdict on a submitted revision? | `review_cases.status` (via `guide_review_cases`) | revision "reads as accepted/rejected" |
+| Is the node live, drafting, or retired?             | `guides.status` / `guide_bases.status` (`draft   | published                             |
+
+
+The reason all three tables still need their own status is because the three levels form a dependency heirarchy: a `guide_revision` belongs to a `guide`, and a `guide` belongs to a `guide_base`. A child's effective state is its own status combined with every ancestor's because a parent's disposition cascades down:
+
+- Archive a `guide_base` → every `guide` under it, and every revision under those is effectively archived regardless of each child's own status column. The topic is retired, so nothing beneath it is live.
+- Archive a single `guide` → all of *its* revisions are effectively archived, but sibling guides under the same base are untouched.
+- Revisions are never archived during its lifecycle.
+
+Each level still keeps its own `status` because it answers a question only that level can answer, and a parent's status cannot stand in for it:
+
+- `guide_bases.status` — is the **topic** live? (One archived base retires a whole collection of guides and revisions under it.)
+- `guides.status` — is **this method/alternative** live, while its base and siblings stay published? You can archive one guide without touching the base.
+- `guide_revisions.status` — is **this specific draft** still being written or already handed to review? This is per-revision and has no meaning at the node level.
 
 ### Slugs and URLs
 
