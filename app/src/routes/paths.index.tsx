@@ -7,8 +7,8 @@ import { PathCard } from "@/components/cards/PathCard"
 
 import { hydratePaths } from "@/lib/getData"
 
-import paths from "@/data/paths.json"
 import guides from "@/data/guides.json"
+import paths from "@/data/paths.json"
 
 
 export const Route = createFileRoute("/paths/")({ component: RouteComponent })

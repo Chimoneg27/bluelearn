@@ -9,6 +9,15 @@
     "languages_total": 12
   },
   {
+    "slug": "ai",
+    "name": "AI",
+    "summary": "Guides covering Artificial Intelligence (AI), Machine Learning (ML) and Deep Learning.",
+    "paths_total": 5,
+    "guides_total": 142,
+    "contributors_total": 38,
+    "languages_total": 12
+  },
+  {
     "slug": "archery",
     "name": "Archery",
     "summary": "Guides on learning archery, including bow handling, shooting techniques, aiming accuracy, form, and target practice fundamentals.",
