@@ -924,6 +924,10 @@ export type Database = {
         Args: { check_role: Database["public"]["Enums"]["app_role"] }
         Returns: boolean
       }
+      submit_guide_revision: {
+        Args: { p_revision_id: string }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "verifier" | "moderator" | "curator" | "admin"

@@ -1,13 +1,14 @@
 import { Hono } from 'hono'
+import { requireUser } from '../middleware/auth.middleware'
+import type { HonoEnv } from '../types'
 import { zValidator } from '@hono/zod-validator'
 import {
   castVoteSchema,
   createGuideSchema,
   createVariantSchema,
   rollbackRevisionSchema,
+  updateRevisionSchema,
 } from '@bluelearn/schemas'
-import { requireUser } from '../middleware/auth.middleware'
-import type { HonoEnv } from '../types'
 import {
   addGuideVariant,
   archiveGuide,
@@ -27,6 +28,7 @@ import {
   retractVote,
   rollbackVariant,
 } from '../services/variant.service'
+import { getRevision, submitRevision, updateRevision } from '../services/revision.service'
 
 // Normalize blank summary/body to NULL to match the create_guide RPC defaults
 const createGuideBody = createGuideSchema.extend({
@@ -155,14 +157,27 @@ export const variantsRouter = new Hono<HonoEnv>()
   })
 
 export const guideRevisionsRouter = new Hono<HonoEnv>()
-  // Returns one revision and its status.
-  .get('/:id', (c) => c.json({ error: 'Not implemented' }, 501))
+  // Returns one revision snapshot as { revision }.
+  .get('/:id', async (c) => {
+    const { revision } = await getRevision(c.get('supabase'), c.req.param('id'))
+    return c.json({ revision })
+  })
 
-  // Overwrites a draft revision before it is submitted.
-  .patch('/:id', requireUser, (c) => c.json({ error: 'Not implemented' }, 501))
+  // Overwrites a draft revision in place; returns { revision }. 404 once submitted.
+  .patch('/:id', requireUser, zValidator('json', updateRevisionSchema), async (c) => {
+    const { revision } = await updateRevision(
+      c.get('supabase'),
+      c.req.param('id'),
+      c.req.valid('json'),
+    )
+    return c.json({ revision })
+  })
 
-  // Submits the revision for review.
-  .post('/:id/submit', requireUser, (c) => c.json({ error: 'Not implemented' }, 501))
+  // 201 with { review_case_id } once the revision is submitted and its case opened.
+  .post('/:id/submit', requireUser, async (c) => {
+    const { review_case_id } = await submitRevision(c.get('supabase'), c.req.param('id'))
+    return c.json({ review_case_id }, 201)
+  })
 
   // Returns the diff between two revisions.
   .get('/:id/diff/:otherId', (c) => c.json({ error: 'Not implemented' }, 501))
