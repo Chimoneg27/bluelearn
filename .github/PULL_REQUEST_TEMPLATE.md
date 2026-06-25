@@ -32,6 +32,8 @@
 
 ### Verification
 
+<!-- Update checkboxes based on what verification methods were completed-->
+
 - [ ] `pnpm -r typecheck` passes
 - [ ] `pnpm -r build` passes
 - [ ] Manually verified in a browser (for UI / behavior changes)
